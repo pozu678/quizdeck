@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'firebase_options.dart';
 import 'auth_screen.dart';
 import 'firestore_service.dart';
 import 'crear_screen.dart';
 import 'screens/mis_mazos_screen.dart';
 import 'screens/explorar_screen.dart';
+import 'models/mazo_local.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await Hive.initFlutter();
+  Hive.registerAdapter(MazoLocalAdapter());
+  Hive.registerAdapter(PreguntaLocalAdapter());
+  Hive.registerAdapter(OpcionLocalAdapter());
+  await Hive.openBox<MazoLocal>('mazos_locales');
+  await Hive.openBox('app_settings');
   runApp(const QuizDeckApp());
 }
 
