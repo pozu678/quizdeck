@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "735731115556",
+    "project_id": "quizdeck-417c9",
+    "storage_bucket": "quizdeck-417c9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:735731115556:android:d1301a32586347e7fc1ab1",
+        "android_client_info": {
+          "package_name": "com.quizdeck.quizdeck"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "735731115556-63ek67jenb8grsrhigjljtt9acfpcg6i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.quizdeck.quizdeck",
+            "certificate_hash": "8f54d9bbde2051fe10c9a79755200ae6ad036916"
+          }
+        },
+        {
+          "client_id": "735731115556-m0e8clfu6strh4sgahs6g34aqemd3gch.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3on7Uhgiethf5gU9XVBiTucqLGZnNjZQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "735731115556-m0e8clfu6strh4sgahs6g34aqemd3gch.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "735731115556-scohcvdi1sh9m4vf5d73eg3djk143kmb.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.quizdeck.quizdeck"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
