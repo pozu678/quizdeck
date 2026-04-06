@@ -26,14 +26,14 @@ class FirestoreService {
   }
 
   // ── Guardar mazo ──
-  Future<void> guardarMazo(Mazo mazo, String uid) async {
+  Future<void> guardarMazo(Mazo mazo, String uid, {bool esPublico = false}) async {
     final ref = _db.collection('decks').doc();
     await ref.set({
       'id': ref.id,
       'titulo': mazo.titulo,
       'categoria': mazo.categoria,
       'autorUid': uid,
-      'esPublico': true,
+      'esPublico': esPublico,
       'descargas': 0,
       'rating': 0,
       'creadoEn': FieldValue.serverTimestamp(),
@@ -367,5 +367,75 @@ class FirestoreService {
     final todas = snap.docs.map((d) => d.data()).toList();
     todas.shuffle();
     return todas.take(min(cantidad, todas.length)).toList();
+  }
+
+  // ── Publicaciones por mes ──
+
+  /// Cuenta cuántos mazos públicos creó el usuario este mes.
+  Future<int> contarPublicacionesMes(String uid) async {
+    final ahora = DateTime.now();
+    final inicioMes = DateTime(ahora.year, ahora.month, 1);
+    final snap = await _db
+        .collection('decks')
+        .where('autorUid', isEqualTo: uid)
+        .where('esPublico', isEqualTo: true)
+        .where('creadoEn',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(inicioMes))
+        .get();
+    return snap.docs.length;
+  }
+
+  // ── Sincronización local → Firebase ──
+
+  /// Sube los mazos locales no sincronizados a Firebase (al hacerse premium).
+  Future<void> sincronizarMazosLocales(
+      String uid, List<dynamic> mazosLocales) async {
+    for (final mazo in mazosLocales) {
+      if (mazo.sincronizado == true) continue;
+      final mazoConvertido = Mazo(
+        titulo: mazo.titulo as String,
+        categoria: mazo.categoria as String,
+        preguntas: (mazo.preguntas as List).map((p) {
+          return Pregunta(
+            enunciado: p.enunciado as String,
+            opciones: (p.opciones as List).map((o) {
+              return Opcion(
+                letra: o.letra as String,
+                texto: o.texto as String,
+                explicacion: o.explicacion as String,
+                esCorrecta: o.esCorrecta as bool,
+              );
+            }).toList(),
+          );
+        }).toList(),
+      );
+      await guardarMazo(mazoConvertido, uid, esPublico: false);
+      mazo.sincronizado = true;
+      await mazo.save();
+    }
+  }
+
+  // ── Reportes de mazos ──
+
+  /// Reporta un mazo. Retorna true si se guardó, false si ya existía.
+  Future<bool> reportarMazo({
+    required String deckId,
+    required String reportadorUid,
+    required String razon,
+  }) async {
+    final existente = await _db
+        .collection('reportes')
+        .where('deckId', isEqualTo: deckId)
+        .where('reportadorUid', isEqualTo: reportadorUid)
+        .limit(1)
+        .get();
+    if (existente.docs.isNotEmpty) return false;
+    await _db.collection('reportes').add({
+      'deckId': deckId,
+      'reportadorUid': reportadorUid,
+      'razon': razon,
+      'creadoEn': FieldValue.serverTimestamp(),
+    });
+    return true;
   }
 }

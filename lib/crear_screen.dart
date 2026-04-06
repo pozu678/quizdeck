@@ -6,6 +6,7 @@ import 'dart:io';
 import 'firestore_service.dart';
 import 'study_screen.dart';
 import 'widgets/paywall_sheet.dart';
+import 'services/local_storage_service.dart';
 
 class CrearScreen extends StatefulWidget {
   const CrearScreen({super.key});
@@ -99,8 +100,9 @@ class _CrearTabState extends State<_CrearTab> {
   final _tituloCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   String _categoria = 'Medicina';
-  bool _esPublico = true;
+  bool _esPublico = false;
   bool _guardando = false;
+  bool _esPremium = false;
 
   final List<Map<String, dynamic>> _preguntas = [];
 
@@ -108,6 +110,19 @@ class _CrearTabState extends State<_CrearTab> {
     'Medicina', 'Ciencias', 'Derecho',
     'Historia', 'Matemática', 'Otro'
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarEstadoPremium();
+  }
+
+  Future<void> _cargarEstadoPremium() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final premium = await FirestoreService().obtenerEsPremium(uid);
+    if (mounted) setState(() => _esPremium = premium);
+  }
 
   void _agregarPregunta() {
     setState(() {
@@ -145,11 +160,10 @@ class _CrearTabState extends State<_CrearTab> {
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
 
-      // Verificar límite de 3 mazos para usuarios gratuitos
-      final esPremium = await FirestoreService().obtenerEsPremium(uid);
-      if (!esPremium) {
-        final misDecks = await FirestoreService().obtenerMisDecks(uid);
-        if (misDecks.length >= 3) {
+      if (!_esPremium) {
+        // Usuarios free: verificar límite contra almacenamiento local
+        final count = LocalStorageService().contarMazos();
+        if (count >= 3) {
           if (mounted) {
             setState(() => _guardando = false);
             await mostrarDialogoPremium(context);
@@ -177,13 +191,73 @@ class _CrearTabState extends State<_CrearTab> {
         preguntas: preguntas,
       );
 
-      await FirestoreService().guardarMazo(mazo, uid);
+      if (_esPremium) {
+        // Premium: verificar mínimo de preguntas si quiere publicar
+        if (_esPublico && preguntas.length < 10) {
+          if (!mounted) return;
+          setState(() => _guardando = false);
+          final accion = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Pocas preguntas para publicar'),
+              content: Text(
+                'Para publicar un mazo necesitas al menos 10 preguntas. '
+                'Tu mazo tiene ${preguntas.length} pregunta${preguntas.length == 1 ? '' : 's'}. '
+                '¿Quieres guardarlo como privado por ahora?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, 'cancelar'),
+                  child: const Text('Seguir editando'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, 'privado'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F0E0C),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Guardar como privado'),
+                ),
+              ],
+            ),
+          );
+          if (accion != 'privado') return;
+          // Guardar como privado
+          await FirestoreService().guardarMazo(mazo, uid, esPublico: false);
+        } else {
+          // Verificar límite de publicaciones del mes
+          if (_esPublico) {
+            final publicacionesMes =
+                await FirestoreService().contarPublicacionesMes(uid);
+            if (publicacionesMes >= 3) {
+              if (!mounted) return;
+              setState(() => _guardando = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Has alcanzado el límite de 3 publicaciones este mes. '
+                    'Podrás publicar más el próximo mes.',
+                  ),
+                ),
+              );
+              return;
+            }
+          }
+          await FirestoreService().guardarMazo(mazo, uid, esPublico: _esPublico);
+        }
+      } else {
+        // Free: guardar localmente, siempre privado
+        final mazoLocal = LocalStorageService().convertirDeMazo(mazo);
+        await LocalStorageService().guardarMazo(mazoLocal);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Mazo guardado correctamente'),
-            backgroundColor: Color(0xFF2D9E6B),
+          SnackBar(
+            content: Text(_esPremium
+                ? '✅ Mazo guardado${_esPublico ? ' y publicado' : ''} correctamente'
+                : '✅ Mazo guardado en tu dispositivo'),
+            backgroundColor: const Color(0xFF2D9E6B),
           ),
         );
         _tituloCtrl.clear();
@@ -197,7 +271,7 @@ class _CrearTabState extends State<_CrearTab> {
         );
       }
     }
-    setState(() => _guardando = false);
+    if (mounted) setState(() => _guardando = false);
   }
 
   @override
@@ -256,22 +330,56 @@ class _CrearTabState extends State<_CrearTab> {
                       .toList(),
                   onChanged: (v) => setState(() => _categoria = v!),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Publicar para todos',
-                        style: TextStyle(fontSize: 14)),
-                    Switch(
-                      value: _esPublico,
-                      activeTrackColor: const Color(0xFF2D9E6B),
-                      onChanged: (v) => setState(() => _esPublico = v),
-                    ),
-                  ],
-                ),
+                // Toggle publicar: solo visible para premium
+                if (_esPremium) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Publicar para todos',
+                          style: TextStyle(fontSize: 14)),
+                      Switch(
+                        value: _esPublico,
+                        activeTrackColor: const Color(0xFF2D9E6B),
+                        onChanged: (v) => setState(() => _esPublico = v),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
+          // Banner informativo para usuarios free
+          if (!_esPremium) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0EDE6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE4E0D6)),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '💡 Hazte Premium para publicar tus mazos y compartirlos con la comunidad',
+                      style: TextStyle(
+                          fontSize: 12.5, color: Color(0xFF3A3832)),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => mostrarDialogoPremium(context),
+                    child: const Text('Ver Premium',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFE85D3A),
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Preguntas
@@ -338,8 +446,11 @@ class _CrearTabState extends State<_CrearTab> {
                           CircularProgressIndicator(strokeWidth: 2,
                               color: Colors.white),
                     )
-                  : const Text('Guardar y publicar mazo →',
-                      style: TextStyle(
+                  : Text(
+                      _esPremium
+                          ? 'Guardar mazo →'
+                          : 'Guardar en mi dispositivo →',
+                      style: const TextStyle(
                           fontSize: 15, fontWeight: FontWeight.w600)),
             ),
           ),
@@ -585,6 +696,20 @@ class _ImportarTab extends StatefulWidget {
 class _ImportarTabState extends State<_ImportarTab> {
   Mazo? _mazoPreview;
   bool _importando = false;
+  bool _esPremium = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarEstadoPremium();
+  }
+
+  Future<void> _cargarEstadoPremium() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final premium = await FirestoreService().obtenerEsPremium(uid);
+    if (mounted) setState(() => _esPremium = premium);
+  }
 
   Future<void> _seleccionarArchivo() async {
     final result = await FilePicker.platform.pickFiles(
@@ -668,12 +793,29 @@ class _ImportarTabState extends State<_ImportarTab> {
     setState(() => _importando = true);
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      await FirestoreService().guardarMazo(_mazoPreview!, uid);
+      if (_esPremium) {
+        await FirestoreService().guardarMazo(_mazoPreview!, uid, esPublico: false);
+      } else {
+        // Free: verificar límite local
+        final count = LocalStorageService().contarMazos();
+        if (count >= 3) {
+          if (mounted) {
+            setState(() => _importando = false);
+            await mostrarDialogoPremium(context);
+          }
+          return;
+        }
+        final mazoLocal =
+            LocalStorageService().convertirDeMazo(_mazoPreview!);
+        await LocalStorageService().guardarMazo(mazoLocal);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Mazo importado correctamente'),
-            backgroundColor: Color(0xFF2D9E6B),
+          SnackBar(
+            content: Text(_esPremium
+                ? '✅ Mazo importado correctamente'
+                : '✅ Mazo guardado en tu dispositivo'),
+            backgroundColor: const Color(0xFF2D9E6B),
           ),
         );
         setState(() => _mazoPreview = null);
@@ -685,7 +827,7 @@ class _ImportarTabState extends State<_ImportarTab> {
         );
       }
     }
-    setState(() => _importando = false);
+    if (mounted) setState(() => _importando = false);
   }
 
   @override

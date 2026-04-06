@@ -4,6 +4,8 @@ import '../firestore_service.dart';
 import '../study_screen.dart';
 import '../widgets/paywall_sheet.dart';
 import '../widgets/settings_sheet.dart';
+import '../models/mazo_local.dart';
+import '../services/local_storage_service.dart';
 import 'duelo_screen.dart';
 
 class MisMazosScreen extends StatefulWidget {
@@ -33,16 +35,43 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
   Future<void> _cargarDecks() async {
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final results = await Future.wait([
-      FirestoreService().obtenerMisDecks(uid),
       FirestoreService().obtenerEsPremium(uid),
       FirestoreService().obtenerKScorePromedio(uid),
     ]);
+    final esPremium = results[0] as bool;
+
+    List<Map<String, dynamic>> decks;
+    if (esPremium) {
+      decks = await FirestoreService().obtenerMisDecks(uid);
+    } else {
+      // Free: mazos desde almacenamiento local
+      final locales = LocalStorageService().obtenerMazos();
+      decks = locales.map((m) => <String, dynamic>{
+        'id': m.id,
+        'titulo': m.titulo,
+        'categoria': m.categoria,
+        'esPublico': false,
+        'descargas': 0,
+        'esLocal': true,
+        '_mazoLocal': m,
+      }).toList();
+    }
+
     setState(() {
-      _misDecks = results[0] as List<Map<String, dynamic>>;
-      _esPremium = results[1] as bool;
-      _kScorePromedio = results[2] as double;
+      _misDecks = decks;
+      _esPremium = esPremium;
+      _kScorePromedio = results[1] as double;
       _cargando = false;
     });
+  }
+
+  /// Helper para obtener Mazo desde un deck (local o Firebase)
+  Future<Mazo?> _obtenerMazo(Map<String, dynamic> deck) async {
+    if (deck['esLocal'] == true) {
+      final local = deck['_mazoLocal'] as MazoLocal;
+      return LocalStorageService().convertirAMazo(local);
+    }
+    return FirestoreService().obtenerMazoCompleto(deck);
   }
 
   Future<void> _mostrarDialogoCodigo() async {
@@ -113,7 +142,11 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
       ),
     );
     if (confirmar == true) {
-      await FirestoreService().eliminarMazo(deckId);
+      if (_esPremium) {
+        await FirestoreService().eliminarMazo(deckId);
+      } else {
+        await LocalStorageService().eliminarMazo(deckId);
+      }
       _cargarDecks();
     }
   }
@@ -249,8 +282,7 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
 
       // Cargar todos los mazos en paralelo
       final mazosCompletos = await Future.wait(
-        mazosSeleccionados.map(
-            (d) => FirestoreService().obtenerMazoCompleto(d)),
+        mazosSeleccionados.map((d) => _obtenerMazo(d)),
       );
 
       // Combinar preguntas
@@ -337,8 +369,7 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
 
     try {
       final mazosCompletos = await Future.wait(
-        _misDecks.map(
-            (d) => FirestoreService().obtenerMazoCompleto(d)),
+        _misDecks.map((d) => _obtenerMazo(d)),
       );
 
       final todasPreguntas = <Pregunta>[];
@@ -751,8 +782,8 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
                           children: [
                             Text(
                               _esPremium
-                                  ? '✦ Plan Premium · Mazos ilimitados'
-                                  : 'Plan Gratis · ${_misDecks.length} de 3 mazos',
+                                  ? '✦ Premium · Sincronizado en la nube ☁️'
+                                  : 'Plan Gratis · Tus mazos están en este dispositivo',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: _esPremium
@@ -998,6 +1029,7 @@ class _FirestoreDeckCard extends StatelessWidget {
 
   Future<void> _estudiarDeck(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final esLocal = deck['esLocal'] == true;
 
     if (!esPremium && uid != null) {
       final puede =
@@ -1010,8 +1042,14 @@ class _FirestoreDeckCard extends StatelessWidget {
       }
     }
 
-    final mazo =
-        await FirestoreService().obtenerMazoCompleto(deck);
+    Mazo? mazo;
+    if (esLocal) {
+      final local = deck['_mazoLocal'] as MazoLocal;
+      mazo = LocalStorageService().convertirAMazo(local);
+    } else {
+      mazo = await FirestoreService().obtenerMazoCompleto(deck);
+    }
+
     if (mazo == null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1029,9 +1067,9 @@ class _FirestoreDeckCard extends StatelessWidget {
         context,
         MaterialPageRoute(
           builder: (_) => StudyScreen(
-            mazo: mazo,
+            mazo: mazo!,
             esPremium: esPremium,
-            deckId: deck['id'] as String?,
+            deckId: esLocal ? null : deck['id'] as String?,
           ),
         ),
       );
