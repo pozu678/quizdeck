@@ -201,20 +201,33 @@ class _ExplorarDeckCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 10, vertical: 3),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F4FD),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              deck['categoria'] ?? 'General',
-              style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A5FA3)),
-            ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F4FD),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  deck['categoria'] ?? 'General',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A5FA3)),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => _mostrarReporte(context),
+                icon: const Icon(Icons.flag_outlined,
+                    size: 18, color: Color(0xFF7A7770)),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Reportar mazo',
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Text(
@@ -232,8 +245,7 @@ class _ExplorarDeckCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () =>
-                  _estudiar(context),
+              onPressed: () => _estudiar(context),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0F0E0C),
                 foregroundColor: Colors.white,
@@ -251,6 +263,83 @@ class _ExplorarDeckCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _mostrarReporte(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final razones = [
+      'Contenido inapropiado',
+      'Contenido spam o sin sentido',
+      'Preguntas incorrectas',
+      'Otro',
+    ];
+
+    final razonElegida = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE4E0D6),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('Reportar mazo',
+                style: TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text(
+                '¿Por qué quieres reportar este mazo?',
+                style: TextStyle(
+                    fontSize: 13, color: Color(0xFF7A7770))),
+            const SizedBox(height: 16),
+            ...razones.map((r) => ListTile(
+                  title: Text(r,
+                      style: const TextStyle(fontSize: 14)),
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () => Navigator.pop(ctx, r),
+                )),
+          ],
+        ),
+      ),
+    );
+
+    if (razonElegida == null || !context.mounted) return;
+
+    final deckId = deck['id'] as String?;
+    if (deckId == null) return;
+
+    final guardado = await FirestoreService().reportarMazo(
+      deckId: deckId,
+      reportadorUid: uid,
+      razon: razonElegida,
+    );
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(guardado
+              ? 'Reporte enviado. Revisaremos este mazo.'
+              : 'Ya reportaste este mazo anteriormente.'),
+        ),
+      );
+    }
   }
 
   Future<void> _estudiar(BuildContext context) async {

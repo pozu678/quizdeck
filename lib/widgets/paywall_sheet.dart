@@ -77,10 +77,11 @@ class _PremiumSheetState extends State<PremiumSheet> {
             ...[
               '✦ Mazos ilimitados',
               '✦ Estudio ilimitado por día',
+              '✦ Sincroniza tus mazos en la nube ☁️',
+              '✦ Publica y comparte con la comunidad',
               '✦ Multi-mazo: estudia varios a la vez',
               '✦ Duelos con amigos',
               '✦ Sin anuncios',
-              '✦ Ranking de eficiencia',
             ].map((beneficio) => Padding(
                   padding: const EdgeInsets.only(bottom: 5),
                   child: Row(
