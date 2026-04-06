@@ -125,6 +125,16 @@ class FirestoreService {
     }).toList();
   }
 
+  // ── Premium ──
+  Future<bool> obtenerEsPremium(String uid) async {
+    final doc = await _db.collection('users').doc(uid).get();
+    return doc.data()?['esPremium'] == true;
+  }
+
+  Future<void> activarPremium(String uid) async {
+    await _db.collection('users').doc(uid).update({'esPremium': true});
+  }
+
   // ── Progreso ──
   Future<void> guardarProgreso({
     required String uid,

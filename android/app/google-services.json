@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "735731115556-rkfqmoe85ca87l763k8m2p1o4bj755h0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.quizdeck.quizdeck",
+            "certificate_hash": "86dbd9de4b5525230261f475595cad5bdf1aad26"
+          }
+        },
+        {
           "client_id": "735731115556-m0e8clfu6strh4sgahs6g34aqemd3gch.apps.googleusercontent.com",
           "client_type": 3
         }

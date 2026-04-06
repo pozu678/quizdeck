@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'firestore_service.dart';
 import 'study_screen.dart';
@@ -815,6 +816,7 @@ class _ExportarTab extends StatefulWidget {
 class _ExportarTabState extends State<_ExportarTab> {
   List<Map<String, dynamic>> _misDecks = [];
   bool _cargando = true;
+  String? _exportandoId;
 
   @override
   void initState() {
@@ -829,6 +831,50 @@ class _ExportarTabState extends State<_ExportarTab> {
       _misDecks = decks;
       _cargando = false;
     });
+  }
+
+  Future<void> _exportarMazo(Map<String, dynamic> deck) async {
+    setState(() => _exportandoId = deck['id'] as String?);
+    try {
+      final mazo =
+          await FirestoreService().obtenerMazoCompleto(deck);
+      if (mazo == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Este mazo no tiene preguntas aún')),
+          );
+        }
+        return;
+      }
+      final buf = StringBuffer()
+        ..writeln('#QUIZDECK v1')
+        ..writeln('#MAZO: ${mazo.titulo}')
+        ..writeln('#CATEGORIA: ${mazo.categoria}');
+      for (final pregunta in mazo.preguntas) {
+        buf.writeln();
+        buf.writeln('---');
+        buf.writeln(pregunta.enunciado);
+        for (final opcion in pregunta.opciones) {
+          final tag = opcion.esCorrecta ? ' [CORRECTA]' : '';
+          buf.writeln(
+              '${opcion.letra}) ${opcion.texto} | ${opcion.explicacion}$tag');
+        }
+      }
+      buf.writeln('---');
+      await Share.share(
+        buf.toString(),
+        subject: '${mazo.titulo}.txt',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al exportar: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exportandoId = null);
+    }
   }
 
   @override
@@ -882,14 +928,18 @@ class _ExportarTabState extends State<_ExportarTab> {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text(
-                            '📤 Exportar próximamente')),
-                  );
-                },
-                icon: const Icon(Icons.download_outlined, size: 16),
+                onPressed: _exportandoId == deck['id']
+                    ? null
+                    : () => _exportarMazo(deck),
+                icon: _exportandoId == deck['id']
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.download_outlined,
+                        size: 16),
                 label: const Text('Exportar'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0F0E0C),
