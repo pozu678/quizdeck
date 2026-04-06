@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'firestore_service.dart';
+import 'widgets/paywall_sheet.dart';
 
 // ═══════════════════════════════════════
 // MODELO DE DATOS
@@ -68,14 +71,14 @@ final mazoEjemplo = Mazo(
           letra: 'C',
           texto: '4 ATP y 2 FADH₂',
           explicacion:
-              '4 ATP es la producción bruta. El FADH₂ es producto del ciclo de Krebs, no de la glucólisis.',
+              '4 ATP es la producción bruta. El FADH₂ es producto del ciclo de Krebs.',
           esCorrecta: false,
         ),
         Opcion(
           letra: 'D',
           texto: '36 ATP y 2 NADH',
           explicacion:
-              '36-38 ATP es el rendimiento total de la respiración celular completa, no solo la glucólisis.',
+              '36-38 ATP es el rendimiento total de la respiración celular completa.',
           esCorrecta: false,
         ),
       ],
@@ -95,14 +98,14 @@ final mazoEjemplo = Mazo(
           letra: 'B',
           texto: 'Núcleo celular',
           explicacion:
-              'El núcleo alberga el material genético y no participa en el metabolismo energético directo.',
+              'El núcleo alberga el material genético y no participa en el metabolismo energético.',
           esCorrecta: false,
         ),
         Opcion(
           letra: 'C',
           texto: 'Matriz mitocondrial',
           explicacion:
-              'Correcto. El ciclo de Krebs ocurre en la matriz mitocondrial, el compartimento interior de la mitocondria.',
+              'Correcto. El ciclo de Krebs ocurre en la matriz mitocondrial.',
           esCorrecta: true,
         ),
         Opcion(
@@ -110,40 +113,6 @@ final mazoEjemplo = Mazo(
           texto: 'Membrana plasmática',
           explicacion:
               'La cadena respiratoria está en la membrana interna mitocondrial, no el ciclo de Krebs.',
-          esCorrecta: false,
-        ),
-      ],
-    ),
-    Pregunta(
-      enunciado:
-          '¿Qué enzima cataliza la conversión de piruvato a acetil-CoA?',
-      opciones: [
-        Opcion(
-          letra: 'A',
-          texto: 'Piruvato quinasa',
-          explicacion:
-              'La piruvato quinasa cataliza el último paso de la glucólisis, no esta conversión.',
-          esCorrecta: false,
-        ),
-        Opcion(
-          letra: 'B',
-          texto: 'Piruvato carboxilasa',
-          explicacion:
-              'La piruvato carboxilasa convierte piruvato en oxaloacetato, no en acetil-CoA.',
-          esCorrecta: false,
-        ),
-        Opcion(
-          letra: 'C',
-          texto: 'Complejo piruvato deshidrogenasa',
-          explicacion:
-              'Correcto. El PDC cataliza la decarboxilación oxidativa del piruvato formando acetil-CoA, CO₂ y NADH.',
-          esCorrecta: true,
-        ),
-        Opcion(
-          letra: 'D',
-          texto: 'Lactato deshidrogenasa',
-          explicacion:
-              'La lactato deshidrogenasa convierte piruvato en lactato en condiciones anaeróbicas.',
           esCorrecta: false,
         ),
       ],
@@ -156,8 +125,16 @@ final mazoEjemplo = Mazo(
 // ═══════════════════════════════════════
 class StudyScreen extends StatefulWidget {
   final Mazo mazo;
+  final bool esPremium;
+  // deckId opcional para guardar progreso (null = mazo combinado/temporal)
+  final String? deckId;
 
-  const StudyScreen({super.key, required this.mazo});
+  const StudyScreen({
+    super.key,
+    required this.mazo,
+    this.esPremium = false,
+    this.deckId,
+  });
 
   @override
   State<StudyScreen> createState() => _StudyScreenState();
@@ -170,9 +147,30 @@ class _StudyScreenState extends State<StudyScreen> {
   int _correctas = 0;
   bool _terminado = false;
 
+  // Timer por pregunta para calcular K-Score
+  final Stopwatch _cronometro = Stopwatch();
+  final List<int> _tiemposPorPregunta = []; // ms por respuesta
+
+  @override
+  void initState() {
+    super.initState();
+    _cronometro.start();
+  }
+
+  @override
+  void dispose() {
+    _cronometro.stop();
+    super.dispose();
+  }
+
   void _seleccionarOpcion(int idx) {
     if (_respondida) return;
-    final esCorrecta = widget.mazo.preguntas[_preguntaActual].opciones[idx].esCorrecta;
+    _cronometro.stop();
+    final tiempoMs = _cronometro.elapsedMilliseconds;
+    _tiemposPorPregunta.add(tiempoMs);
+
+    final esCorrecta =
+        widget.mazo.preguntas[_preguntaActual].opciones[idx].esCorrecta;
     setState(() {
       _opcionSeleccionada = idx;
       _respondida = true;
@@ -182,6 +180,9 @@ class _StudyScreenState extends State<StudyScreen> {
 
   void _siguiente() {
     if (_preguntaActual < widget.mazo.preguntas.length - 1) {
+      _cronometro
+        ..reset()
+        ..start();
       setState(() {
         _preguntaActual++;
         _opcionSeleccionada = null;
@@ -189,7 +190,49 @@ class _StudyScreenState extends State<StudyScreen> {
       });
     } else {
       setState(() => _terminado = true);
+      _guardarProgreso();
     }
+  }
+
+  /// Calcula el K-Score usando la fórmula de eficiencia.
+  double _calcularKScore() {
+    final total = widget.mazo.preguntas.length;
+    if (total == 0) return 0;
+
+    const tiempoBase = 15000; // 15 segundos en ms
+    final tiempoUsuario = _tiemposPorPregunta.isEmpty
+        ? tiempoBase
+        : _tiemposPorPregunta.reduce((a, b) => a + b) ~/
+            _tiemposPorPregunta.length;
+
+    final velocidadBonus =
+        (tiempoBase - tiempoUsuario).clamp(0, tiempoBase) /
+            tiempoBase *
+            0.3;
+
+    return (_correctas / total * 100) * (1 + velocidadBonus);
+  }
+
+  int _tiempoPromedioMs() {
+    if (_tiemposPorPregunta.isEmpty) return 0;
+    return _tiemposPorPregunta.reduce((a, b) => a + b) ~/
+        _tiemposPorPregunta.length;
+  }
+
+  Future<void> _guardarProgreso() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final deckId = widget.deckId;
+    if (uid == null || deckId == null) return;
+    final total = widget.mazo.preguntas.length;
+    if (total == 0) return;
+    await FirestoreService().guardarProgreso(
+      uid: uid,
+      deckId: deckId,
+      correctas: _correctas,
+      total: total,
+      kScore: _calcularKScore(),
+      tiempoPromedio: _tiempoPromedioMs(),
+    );
   }
 
   @override
@@ -206,7 +249,8 @@ class _StudyScreenState extends State<StudyScreen> {
         backgroundColor: const Color(0xFFFAF8F4),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF0F0E0C)),
+          icon: const Icon(Icons.arrow_back,
+              color: Color(0xFF0F0E0C)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
@@ -236,7 +280,8 @@ class _StudyScreenState extends State<StudyScreen> {
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: const Color(0xFFF0EDE6),
               borderRadius: BorderRadius.circular(20),
@@ -264,7 +309,7 @@ class _StudyScreenState extends State<StudyScreen> {
                 border: Border.all(color: const Color(0xFFE4E0D6)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 12,
                     offset: const Offset(0, 2),
                   ),
@@ -292,15 +337,12 @@ class _StudyScreenState extends State<StudyScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             // Opciones
             ...List.generate(pregunta.opciones.length, (i) {
               final opcion = pregunta.opciones[i];
               return _buildOpcion(opcion, i);
             }),
-
             const SizedBox(height: 20),
-
             // Botón siguiente
             if (_respondida)
               SizedBox(
@@ -310,12 +352,14 @@ class _StudyScreenState extends State<StudyScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0F0E0C),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
                   child: Text(
-                    _preguntaActual < widget.mazo.preguntas.length - 1
+                    _preguntaActual <
+                            widget.mazo.preguntas.length - 1
                         ? 'Siguiente pregunta →'
                         : 'Ver resultados →',
                     style: const TextStyle(
@@ -372,7 +416,6 @@ class _StudyScreenState extends State<StudyScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Letra
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   width: 28,
@@ -390,7 +433,6 @@ class _StudyScreenState extends State<StudyScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Texto
                 Expanded(
                   child: Text(opcion.texto,
                       style: const TextStyle(
@@ -398,11 +440,13 @@ class _StudyScreenState extends State<StudyScreen> {
                           height: 1.4,
                           color: Color(0xFF0F0E0C))),
                 ),
-                // Ícono
                 if (_respondida)
                   Icon(
-                    opcion.esCorrecta ? Icons.check_circle : 
-                    idx == _opcionSeleccionada ? Icons.cancel : null,
+                    opcion.esCorrecta
+                        ? Icons.check_circle
+                        : idx == _opcionSeleccionada
+                            ? Icons.cancel
+                            : null,
                     color: opcion.esCorrecta
                         ? const Color(0xFF2D9E6B)
                         : const Color(0xFFD94444),
@@ -410,7 +454,6 @@ class _StudyScreenState extends State<StudyScreen> {
                   ),
               ],
             ),
-            // Explicación
             if (_respondida)
               AnimatedSize(
                 duration: const Duration(milliseconds: 250),
@@ -418,7 +461,7 @@ class _StudyScreenState extends State<StudyScreen> {
                   margin: const EdgeInsets.only(top: 12, left: 40),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(8),
                     border: Border(
                       left: BorderSide(
@@ -447,6 +490,7 @@ class _StudyScreenState extends State<StudyScreen> {
   Widget _buildResultados() {
     final total = widget.mazo.preguntas.length;
     final pct = (_correctas / total * 100).round();
+    final kScore = _calcularKScore();
     final color = pct >= 70
         ? const Color(0xFF2D9E6B)
         : pct >= 40
@@ -461,11 +505,12 @@ class _StudyScreenState extends State<StudyScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFAF8F4),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const SizedBox(height: 24),
+              // Círculo de porcentaje
               Container(
                 width: 110,
                 height: 110,
@@ -481,7 +526,7 @@ class _StudyScreenState extends State<StudyScreen> {
                           color: color)),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               Text(mensaje,
                   style: const TextStyle(
                       fontSize: 26, fontWeight: FontWeight.w800)),
@@ -490,7 +535,26 @@ class _StudyScreenState extends State<StudyScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 14, color: Color(0xFF7A7770))),
-              const SizedBox(height: 32),
+              const SizedBox(height: 8),
+              // K-Score
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4E6),
+                  borderRadius: BorderRadius.circular(20),
+                  border:
+                      Border.all(color: const Color(0xFFF5A623)),
+                ),
+                child: Text(
+                  '⚡ K-Score: ${kScore.round()}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFB87A00)),
+                ),
+              ),
+              const SizedBox(height: 24),
               Row(
                 children: [
                   _ResultStat(
@@ -507,7 +571,7 @@ class _StudyScreenState extends State<StudyScreen> {
                       color: const Color(0xFF0F0E0C)),
                 ],
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -518,18 +582,24 @@ class _StudyScreenState extends State<StudyScreen> {
                       _respondida = false;
                       _correctas = 0;
                       _terminado = false;
+                      _tiemposPorPregunta.clear();
+                      _cronometro
+                        ..reset()
+                        ..start();
                     });
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0F0E0C),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text('Repetir mazo',
                       style: TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600)),
                 ),
               ),
               const SizedBox(height: 12),
@@ -538,16 +608,59 @@ class _StudyScreenState extends State<StudyScreen> {
                 child: OutlinedButton(
                   onPressed: () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFE4E0D6)),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side:
+                        const BorderSide(color: Color(0xFFE4E0D6)),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text('Volver a mis mazos',
                       style: TextStyle(
-                          fontSize: 15, color: Color(0xFF0F0E0C))),
+                          fontSize: 15,
+                          color: Color(0xFF0F0E0C))),
                 ),
               ),
+              // Banner premium (solo para usuarios gratuitos)
+              if (!widget.esPremium) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF4E6),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: const Color(0xFFF5A623)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '¿Quieres estudiar sin límites?',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF3A3832)),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            mostrarDialogoPremium(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                        ),
+                        child: const Text('Hazte Premium →',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFE85D3A))),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 32),
             ],
           ),
         ),
