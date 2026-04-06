@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'firestore_service.dart';
 import 'study_screen.dart';
+import 'widgets/paywall_sheet.dart';
 
 class CrearScreen extends StatefulWidget {
   const CrearScreen({super.key});
@@ -143,6 +144,20 @@ class _CrearTabState extends State<_CrearTab> {
 
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
+
+      // Verificar límite de 3 mazos para usuarios gratuitos
+      final esPremium = await FirestoreService().obtenerEsPremium(uid);
+      if (!esPremium) {
+        final misDecks = await FirestoreService().obtenerMisDecks(uid);
+        if (misDecks.length >= 3) {
+          if (mounted) {
+            setState(() => _guardando = false);
+            await mostrarDialogoPremium(context);
+          }
+          return;
+        }
+      }
+
       final preguntas = _preguntas.map((p) {
         final opciones = (p['opciones'] as List).map((o) => Opcion(
           letra: ['A','B','C','D'][(p['opciones'] as List).indexOf(o)],
@@ -218,7 +233,7 @@ class _CrearTabState extends State<_CrearTab> {
                         color: Color(0xFF3A3832))),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
-                  value: _categoria,
+                  initialValue: _categoria,
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: const Color(0xFFFAF8F4),
@@ -249,7 +264,7 @@ class _CrearTabState extends State<_CrearTab> {
                         style: TextStyle(fontSize: 14)),
                     Switch(
                       value: _esPublico,
-                      activeColor: const Color(0xFF2D9E6B),
+                      activeTrackColor: const Color(0xFF2D9E6B),
                       onChanged: (v) => setState(() => _esPublico = v),
                     ),
                   ],
