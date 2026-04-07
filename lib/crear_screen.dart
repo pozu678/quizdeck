@@ -1036,7 +1036,7 @@ class _ImportarTabState extends State<_ImportarTab> {
                         fontSize: 15, fontWeight: FontWeight.w700)),
                 SizedBox(height: 12),
                 Text(
-                  '#QUIZDECK v1\n#MAZO: Título del mazo\n#CATEGORIA: Medicina\n\n---\n¿Pregunta aquí?\nA) Opción A | Explicación. [CORRECTA]\nB) Opción B | Explicación.\nC) Opción C | Explicación.\nD) Opción D | Explicación.\n---',
+                  '1.- ¿Enunciado de la pregunta?\na) Opción\nb) Opción\nc) Opción\nd) Opción\nRespuesta: b\nJustificación a): texto\nJustificación b): texto\nJustificación c): texto\nJustificación d): texto\n\n2.- ¿Siguiente pregunta?\n...\n\nLas preguntas se separan con una línea en blanco\nseguida del siguiente número con ".-"',
                   style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,

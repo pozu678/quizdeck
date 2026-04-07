@@ -1,4 +1,8 @@
 import 'package:hive/hive.dart';
+import 'pregunta_local.dart';
+
+export 'pregunta_local.dart';
+export 'opcion_local.dart';
 
 // TypeIds: 0 = MazoLocal, 1 = PreguntaLocal, 2 = OpcionLocal
 
@@ -6,6 +10,7 @@ class MazoLocal extends HiveObject {
   String id;
   String titulo;
   String categoria;
+  bool esPublico;
   List<PreguntaLocal> preguntas;
   bool sincronizado;
   String? firebaseId;
@@ -15,6 +20,7 @@ class MazoLocal extends HiveObject {
     required this.id,
     required this.titulo,
     required this.categoria,
+    this.esPublico = false,
     required this.preguntas,
     this.sincronizado = false,
     this.firebaseId,
@@ -22,28 +28,7 @@ class MazoLocal extends HiveObject {
   });
 }
 
-class PreguntaLocal {
-  String enunciado;
-  List<OpcionLocal> opciones;
-
-  PreguntaLocal({required this.enunciado, required this.opciones});
-}
-
-class OpcionLocal {
-  String letra;
-  String texto;
-  String explicacion;
-  bool esCorrecta;
-
-  OpcionLocal({
-    required this.letra,
-    required this.texto,
-    required this.explicacion,
-    required this.esCorrecta,
-  });
-}
-
-// ── Adapters manuales ──────────────────────────────────────────
+// ── Adapter manual ─────────────────────────────────────────────
 
 class MazoLocalAdapter extends TypeAdapter<MazoLocal> {
   @override
@@ -63,13 +48,15 @@ class MazoLocalAdapter extends TypeAdapter<MazoLocal> {
       sincronizado: fields[4] as bool,
       firebaseId: fields[5] as String?,
       creadoEn: fields[6] as DateTime,
+      // field 7 added later; default false for existing records
+      esPublico: fields[7] as bool? ?? false,
     );
   }
 
   @override
   void write(BinaryWriter writer, MazoLocal obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -83,66 +70,8 @@ class MazoLocalAdapter extends TypeAdapter<MazoLocal> {
       ..writeByte(5)
       ..write(obj.firebaseId)
       ..writeByte(6)
-      ..write(obj.creadoEn);
-  }
-}
-
-class PreguntaLocalAdapter extends TypeAdapter<PreguntaLocal> {
-  @override
-  final int typeId = 1;
-
-  @override
-  PreguntaLocal read(BinaryReader reader) {
-    final numFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numFields; i++) reader.readByte(): reader.read(),
-    };
-    return PreguntaLocal(
-      enunciado: fields[0] as String,
-      opciones: (fields[1] as List).cast<OpcionLocal>(),
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, PreguntaLocal obj) {
-    writer
-      ..writeByte(2)
-      ..writeByte(0)
-      ..write(obj.enunciado)
-      ..writeByte(1)
-      ..write(obj.opciones);
-  }
-}
-
-class OpcionLocalAdapter extends TypeAdapter<OpcionLocal> {
-  @override
-  final int typeId = 2;
-
-  @override
-  OpcionLocal read(BinaryReader reader) {
-    final numFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numFields; i++) reader.readByte(): reader.read(),
-    };
-    return OpcionLocal(
-      letra: fields[0] as String,
-      texto: fields[1] as String,
-      explicacion: fields[2] as String,
-      esCorrecta: fields[3] as bool,
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, OpcionLocal obj) {
-    writer
-      ..writeByte(4)
-      ..writeByte(0)
-      ..write(obj.letra)
-      ..writeByte(1)
-      ..write(obj.texto)
-      ..writeByte(2)
-      ..write(obj.explicacion)
-      ..writeByte(3)
-      ..write(obj.esCorrecta);
+      ..write(obj.creadoEn)
+      ..writeByte(7)
+      ..write(obj.esPublico);
   }
 }
