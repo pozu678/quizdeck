@@ -713,32 +713,62 @@ class _ImportarTabState extends State<_ImportarTab> {
 
   Future<void> _seleccionarArchivo() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['txt'],
+      type: FileType.any,
     );
     if (result == null) return;
     final file = File(result.files.single.path!);
     final contenido = await file.readAsString();
-    final mazo = _parsearTxt(contenido);
+    final nombreArchivo =
+        result.files.single.name.replaceAll(RegExp(r'\.txt$', caseSensitive: false), '').trim();
+    final mazo = _parsearTxt(contenido, tituloFallback: nombreArchivo);
     if (mazo != null) {
       setState(() => _mazoPreview = mazo);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('❌ Formato incorrecto')),
-        );
-      }
     }
   }
 
-  Mazo? _parsearTxt(String texto) {
-    final lineas = texto.split('\n').map((l) => l.trim()).toList();
-    String titulo = '';
+  void _mostrarErrorParser(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('❌ $mensaje')),
+    );
+  }
+
+  // Normaliza "Justificación" → "Justificacion" para comparar sin tilde
+  String _normJust(String s) => s
+      .replaceAll('á', 'a')
+      .replaceAll('Á', 'A')
+      .replaceAll('é', 'e')
+      .replaceAll('É', 'E')
+      .replaceAll('í', 'i')
+      .replaceAll('Í', 'I')
+      .replaceAll('ó', 'o')
+      .replaceAll('Ó', 'O')
+      .replaceAll('ú', 'u')
+      .replaceAll('Ú', 'U');
+
+  // Regex compilados una sola vez
+  static final _reOpcion =
+      RegExp(r'^([a-dA-D])\)\s*(.+)$');
+  static final _reRespuesta =
+      RegExp(r'^[Rr]espuesta:\s*([a-dA-D])\s*$', caseSensitive: false);
+  static final _reJust =
+      RegExp(r'^[Jj]ustificaci[oó]n\s+([a-dA-D])\):\s*(.+)$',
+          caseSensitive: false);
+  static final _reEncabezadoPregunta =
+      RegExp(r'^\d+\.-\s*');
+
+  Mazo? _parsearTxt(String texto, {String tituloFallback = 'Mazo importado'}) {
+    // Normalizar saltos de línea y recortar cada línea
+    final lineas = texto.replaceAll('\r\n', '\n').replaceAll('\r', '\n')
+        .split('\n')
+        .map((l) => l.trim())
+        .toList();
+
+    String titulo = tituloFallback;
     String categoria = 'General';
-    final preguntas = <Pregunta>[];
     int i = 0;
 
+    // Cabeceras opcionales (#MAZO:, #CATEGORIA:)
     while (i < lineas.length && lineas[i].startsWith('#')) {
       if (lineas[i].startsWith('#MAZO:')) {
         titulo = lineas[i].replaceFirst('#MAZO:', '').trim();
@@ -748,43 +778,105 @@ class _ImportarTabState extends State<_ImportarTab> {
       i++;
     }
 
-    if (titulo.isEmpty) return null;
-
-    while (i < lineas.length) {
-      if (lineas[i] == '---') {
-        i++;
-        if (i >= lineas.length || lineas[i] == '---') {
-          i++;
-          continue;
-        }
-        final enunciado = lineas[i];
-        i++;
-        final opciones = <Opcion>[];
-        while (i < lineas.length && lineas[i] != '---') {
-          final linea = lineas[i];
-          final match = RegExp(
-                  r'^([A-E])\)\s*(.+?)\s*\|\s*(.+?)(\s*\[CORRECTA\])?\s*$')
-              .firstMatch(linea);
-          if (match != null) {
-            opciones.add(Opcion(
-              letra: match.group(1)!,
-              texto: match.group(2)!,
-              explicacion: match.group(3)!,
-              esCorrecta: match.group(4) != null,
-            ));
-          }
-          i++;
-        }
-        if (enunciado.isNotEmpty && opciones.length >= 2) {
-          preguntas.add(Pregunta(
-              enunciado: enunciado, opciones: opciones));
-        }
-      } else {
-        i++;
+    // Agrupar en bloques: cada bloque empieza con línea "N.-"
+    final bloques = <List<String>>[];
+    List<String>? bloque;
+    for (; i < lineas.length; i++) {
+      final linea = lineas[i];
+      if (_reEncabezadoPregunta.hasMatch(linea)) {
+        if (bloque != null) bloques.add(bloque);
+        bloque = [linea];
+      } else if (bloque != null) {
+        bloque.add(linea);
       }
     }
+    if (bloque != null) bloques.add(bloque);
 
-    if (preguntas.isEmpty) return null;
+    if (bloques.isEmpty) {
+      _mostrarErrorParser('No se encontraron preguntas en el archivo.');
+      return null;
+    }
+
+    final preguntas = <Pregunta>[];
+
+    for (int b = 0; b < bloques.length; b++) {
+      final numPregunta = b + 1;
+      final lb = bloques[b].where((l) => l.isNotEmpty).toList();
+
+      // Enunciado: primera línea sin el prefijo "N.-"
+      final enunciado = lb[0].replaceFirst(_reEncabezadoPregunta, '').trim();
+      if (enunciado.isEmpty) {
+        _mostrarErrorParser('Error en pregunta $numPregunta: falta el enunciado');
+        return null;
+      }
+
+      final textos = <String, String>{};   // clave: 'a'–'d' minúsculas
+      String? correcta;                    // letra minúscula
+      final explicaciones = <String, String>{};
+
+      for (int j = 1; j < lb.length; j++) {
+        final linea = lb[j];
+
+        // a) texto
+        final mOpt = _reOpcion.firstMatch(linea);
+        if (mOpt != null) {
+          textos[mOpt.group(1)!.toLowerCase()] = mOpt.group(2)!.trim();
+          continue;
+        }
+
+        // Respuesta: b
+        final mResp = _reRespuesta.firstMatch(linea);
+        if (mResp != null) {
+          correcta = mResp.group(1)!.toLowerCase();
+          continue;
+        }
+
+        // Justificación a): texto  (también sin tilde)
+        final mJust = _reJust.firstMatch(linea);
+        if (mJust != null) {
+          explicaciones[mJust.group(1)!.toLowerCase()] =
+              mJust.group(2)!.trim();
+          continue;
+        }
+      }
+
+      // Validaciones
+      if (correcta == null) {
+        _mostrarErrorParser(
+            'Error en pregunta $numPregunta: falta Respuesta:');
+        return null;
+      }
+      for (final letra in ['a', 'b', 'c', 'd']) {
+        if (!textos.containsKey(letra)) {
+          _mostrarErrorParser(
+              'Error en pregunta $numPregunta: falta opción $letra)');
+          return null;
+        }
+        if (!explicaciones.containsKey(letra)) {
+          _mostrarErrorParser(
+              'Error en pregunta $numPregunta: falta Justificación $letra):');
+          return null;
+        }
+      }
+
+      preguntas.add(Pregunta(
+        enunciado: enunciado,
+        opciones: ['a', 'b', 'c', 'd']
+            .map((letra) => Opcion(
+                  letra: letra.toUpperCase(),
+                  texto: textos[letra]!,
+                  explicacion: explicaciones[letra]!,
+                  esCorrecta: letra == correcta,
+                ))
+            .toList(),
+      ));
+    }
+
+    if (preguntas.isEmpty) {
+      _mostrarErrorParser('No se encontraron preguntas válidas en el archivo.');
+      return null;
+    }
+
     return Mazo(titulo: titulo, categoria: categoria, preguntas: preguntas);
   }
 
