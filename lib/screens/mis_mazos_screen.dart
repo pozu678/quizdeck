@@ -7,6 +7,7 @@ import '../widgets/settings_sheet.dart';
 import '../models/mazo_local.dart';
 import '../services/local_storage_service.dart';
 import 'duelo_screen.dart';
+import 'editar_mazo_screen.dart';
 
 class MisMazosScreen extends StatefulWidget {
   const MisMazosScreen({super.key});
@@ -119,6 +120,22 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
     } finally {
       ctrl.dispose();
     }
+  }
+
+  Future<void> _editarMazo(Map<String, dynamic> deck) async {
+    final esLocal = deck['esLocal'] == true;
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditarMazoScreen(
+          deck: deck,
+          esPremium: _esPremium,
+          esLocal: esLocal,
+          mazoLocal: esLocal ? deck['_mazoLocal'] as MazoLocal? : null,
+        ),
+      ),
+    );
+    if (result == true) _cargarDecks();
   }
 
   Future<void> _eliminarMazo(String deckId) async {
@@ -752,6 +769,7 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
                           esPremium: _esPremium,
                           onEliminar: () =>
                               _eliminarMazo(deck['id'] ?? ''),
+                          onEditar: () => _editarMazo(deck),
                           modoSeleccion: _modoSeleccion,
                           seleccionado: _seleccionados
                               .contains(deck['id'] ?? ''),
@@ -864,6 +882,7 @@ class _MisMazosScreenState extends State<MisMazosScreen> {
 class _FirestoreDeckCard extends StatelessWidget {
   final Map<String, dynamic> deck;
   final VoidCallback onEliminar;
+  final VoidCallback? onEditar;
   final bool esPremium;
   final bool modoSeleccion;
   final bool seleccionado;
@@ -872,6 +891,7 @@ class _FirestoreDeckCard extends StatelessWidget {
   const _FirestoreDeckCard({
     required this.deck,
     required this.onEliminar,
+    this.onEditar,
     required this.esPremium,
     this.modoSeleccion = false,
     this.seleccionado = false,
@@ -978,7 +998,7 @@ class _FirestoreDeckCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () {},
+                      onPressed: onEditar,
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(
                             color: Color(0xFFE4E0D6)),

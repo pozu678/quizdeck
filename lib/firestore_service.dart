@@ -89,6 +89,40 @@ class FirestoreService {
     }
   }
 
+  // ── Actualizar mazo existente ──
+  Future<void> actualizarMazo(
+    String deckId,
+    Mazo mazo, {
+    bool esPublico = false,
+    bool esAleatorio = false,
+  }) async {
+    final ref = _db.collection('decks').doc(deckId);
+    await ref.update({
+      'titulo': mazo.titulo,
+      'categoria': mazo.categoria,
+      'esPublico': esPublico,
+      'esAleatorio': esAleatorio,
+    });
+    // Reemplazar preguntas: eliminar viejas y agregar nuevas
+    final oldQuestions = await ref.collection('questions').get();
+    for (final doc in oldQuestions.docs) {
+      await doc.reference.delete();
+    }
+    for (final pregunta in mazo.preguntas) {
+      await ref.collection('questions').add({
+        'enunciado': pregunta.enunciado,
+        'opciones': pregunta.opciones
+            .map((o) => {
+                  'letra': o.letra,
+                  'texto': o.texto,
+                  'explicacion': o.explicacion,
+                  'esCorrecta': o.esCorrecta,
+                })
+            .toList(),
+      });
+    }
+  }
+
   // ── Eliminar mazo ──
   Future<void> eliminarMazo(String deckId) async {
     final ref = _db.collection('decks').doc(deckId);

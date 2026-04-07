@@ -11,6 +11,7 @@ class MazoLocal extends HiveObject {
   String titulo;
   String categoria;
   bool esPublico;
+  bool esAleatorio;
   List<PreguntaLocal> preguntas;
   bool sincronizado;
   String? firebaseId;
@@ -21,6 +22,7 @@ class MazoLocal extends HiveObject {
     required this.titulo,
     required this.categoria,
     this.esPublico = false,
+    this.esAleatorio = false,
     required this.preguntas,
     this.sincronizado = false,
     this.firebaseId,
@@ -50,13 +52,15 @@ class MazoLocalAdapter extends TypeAdapter<MazoLocal> {
       creadoEn: fields[6] as DateTime,
       // field 7 added later; default false for existing records
       esPublico: fields[7] as bool? ?? false,
+      // field 8 added later; default false for existing records
+      esAleatorio: fields[8] as bool? ?? false,
     );
   }
 
   @override
   void write(BinaryWriter writer, MazoLocal obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -72,6 +76,8 @@ class MazoLocalAdapter extends TypeAdapter<MazoLocal> {
       ..writeByte(6)
       ..write(obj.creadoEn)
       ..writeByte(7)
-      ..write(obj.esPublico);
+      ..write(obj.esPublico)
+      ..writeByte(8)
+      ..write(obj.esAleatorio);
   }
 }

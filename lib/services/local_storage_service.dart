@@ -51,6 +51,7 @@ class LocalStorageService {
     return Mazo(
       titulo: local.titulo,
       categoria: local.categoria,
+      esAleatorio: local.esAleatorio,
       preguntas: local.preguntas
           .map((p) => Pregunta(
                 enunciado: p.enunciado,
@@ -68,11 +69,12 @@ class LocalStorageService {
   }
 
   /// Convierte Mazo a MazoLocal (para guardar desde CrearScreen).
-  MazoLocal convertirDeMazo(Mazo mazo, {String? id}) {
+  MazoLocal convertirDeMazo(Mazo mazo, {String? id, bool esAleatorio = false}) {
     return MazoLocal(
       id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       titulo: mazo.titulo,
       categoria: mazo.categoria,
+      esAleatorio: mazo.esAleatorio || esAleatorio,
       preguntas: mazo.preguntas
           .map((p) => PreguntaLocal(
                 enunciado: p.enunciado,

@@ -101,6 +101,7 @@ class _CrearTabState extends State<_CrearTab> {
   final _descCtrl = TextEditingController();
   String _categoria = 'Medicina';
   bool _esPublico = false;
+  bool _esAleatorio = false;
   bool _guardando = false;
   bool _esPremium = false;
 
@@ -189,6 +190,7 @@ class _CrearTabState extends State<_CrearTab> {
         titulo: _tituloCtrl.text.trim(),
         categoria: _categoria,
         preguntas: preguntas,
+        esAleatorio: _esAleatorio,
       );
 
       if (_esPremium) {
@@ -262,7 +264,11 @@ class _CrearTabState extends State<_CrearTab> {
         );
         _tituloCtrl.clear();
         _descCtrl.clear();
-        setState(() => _preguntas.clear());
+        setState(() {
+          _preguntas.clear();
+          _esPublico = false;
+          _esAleatorio = false;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -346,6 +352,20 @@ class _CrearTabState extends State<_CrearTab> {
                     ],
                   ),
                 ],
+                // Toggle orden aleatorio: siempre visible
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Orden aleatorio al estudiar',
+                        style: TextStyle(fontSize: 14)),
+                    Switch(
+                      value: _esAleatorio,
+                      activeTrackColor: const Color(0xFF2D9E6B),
+                      onChanged: (v) => setState(() => _esAleatorio = v),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

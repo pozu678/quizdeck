@@ -34,11 +34,13 @@ class Mazo {
   final String titulo;
   final String categoria;
   final List<Pregunta> preguntas;
+  final bool esAleatorio;
 
   const Mazo({
     required this.titulo,
     required this.categoria,
     required this.preguntas,
+    this.esAleatorio = false,
   });
 }
 
